@@ -94,7 +94,7 @@ class InlineKeyboardButton(Object):
         callback_game: "types.CallbackGame" = None,
         copy_text: Optional[str] = None,
         icon_custom_emoji_id: Optional[str] = None,
-        style: "enums.ButtonStyle" = enums.ButtonStyle.DEFAULT
+        style: "enums.ButtonStyle" = enums.ButtonStyle.PRIMARY
     ):
         super().__init__()
 

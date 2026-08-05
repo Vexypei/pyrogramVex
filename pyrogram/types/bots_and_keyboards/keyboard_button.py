@@ -57,7 +57,7 @@ class KeyboardButton(Object):
         self,
         text: str,
         icon_custom_emoji_id: Optional[str] = None,
-        style: "enums.ButtonStyle" = enums.ButtonStyle.DEFAULT,
+        style: "enums.ButtonStyle" = enums.ButtonStyle.PRIMARY,
         *,
         request_contact: bool = None,
         request_location: bool = None,
