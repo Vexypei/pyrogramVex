@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+pyrogram/raw/all.py
+pyrogram/raw/base/
+pyrogram/raw/functions/
+pyrogram/raw/types/
+pyrogram/errors/exceptions/

@@ -18,18 +18,75 @@
 
 import csv
 from pathlib import Path
+import re
+import requests  # requests==2.28.1
+import sys
 
-for p in Path("source").glob("*.tsv"):
-    with open(p) as f:
-        reader = csv.reader(f, delimiter="\t")
-        dct = {k: v for k, v in reader if k != "id"}
-        keys = sorted(dct)
+if len(sys.argv) > 3:
+    sys.exit(1)
 
-    with open(p, "w") as f:
-        f.write("id\tmessage\n")
+if sys.argv[1] == "sort": 
+    for p in Path("source").glob("*.tsv"):
+        with open(p) as f:
+            reader = csv.reader(f, delimiter="\t")
+            dct = {k: v for k, v in reader if k != "id"}
+            keys = sorted(dct)
 
-        for i, item in enumerate(keys, start=1):
-            f.write(f"{item}\t{dct[item]}")
+        with open(p, "w") as f:
+            f.write("id\tmessage\n")
 
-            if i != len(keys):
-                f.write("\n")
+            for i, item in enumerate(keys, start=1):
+                f.write(f"{item}\t{dct[item]}")
+
+                if i != len(keys):
+                    f.write("\n")
+
+elif sys.argv[1] == "scrape":
+    b = f"https://{sys.argv[2]}.telegram.org"
+    c = "/api/errors"
+    a = requests.get(b + c)
+    d = a.text
+    e = r"\<a\ href\=\"(.*)\"\>here.*\<\/a\>"
+    f = re.search(e, d)
+    if f:
+        a = requests.get(
+            b + f.group(1)
+        )
+        d = a.json()
+        e = d.get("errors", [])
+        for h in e:
+            dct = {}
+
+            for p in Path("source/").glob(f"{h}*.tsv"):
+                with open(p) as f:
+                    reader = csv.reader(f, delimiter="\t")
+                    for k, v in reader:
+                        if k != "id":
+                            dct[k] = v
+
+            j = d.get("errors").get(h)
+            for k in j:
+                if k.endswith("_*"):
+                    continue
+                g = d.get("descriptions")
+                l = g.get(k)
+                if not l:
+                    continue
+                m = k.replace("_%d", "_X")
+                if "_X" in m:
+                    l = l.replace("for the specified number of", "{value}")
+                l = l.replace("%d", "{value}")
+                l = l.replace("\"", "'")
+                l = l.replace("&raquo;", "»")
+                l = l.replace("&laquo;", "«")
+                l = l.replace(" »", "")
+                l = l.replace("](/api/", f"]({b}/api/")
+                dct[m] = l
+
+            keys = sorted(dct)
+            
+            for p in Path("source/").glob(f"{h}*.tsv"):
+                with open(p, "w") as f:
+                    f.write("id\tmessage\n")
+                    for i, item in enumerate(keys, start=1):
+                        f.write(f"{item}\t{dct[item]}\n")

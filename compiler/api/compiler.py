@@ -22,7 +22,7 @@ import re
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import NamedTuple, List, Tuple
+from typing import NamedTuple
 
 # from autoflake import fix_code
 # from black import format_str, FileMode
@@ -64,11 +64,15 @@ try:
     with open("docs.json") as f:
         docs = json.load(f)
 except FileNotFoundError:
-    docs = {
-        "type": {},
-        "constructor": {},
-        "method": {}
-    }
+    try:
+        with open(HOME_PATH / "docs.json") as f:
+            docs = json.load(f)
+    except FileNotFoundError:
+        docs = {
+            "type": {},
+            "constructor": {},
+            "method": {}
+        }
 
 
 class Combinator(NamedTuple):
@@ -78,7 +82,7 @@ class Combinator(NamedTuple):
     name: str
     id: str
     has_flags: bool
-    args: List[Tuple[str, str]]
+    args: list[tuple[str, str]]
     qualtype: str
     typespace: str
     type: str
@@ -92,6 +96,19 @@ def snake(s: str):
 
 def camel(s: str):
     return "".join([i[0].upper() + i[1:] for i in s.split("_")])
+
+
+# noinspection PyShadowingBuiltins, PyShadowingNames
+def get_return_type_hint(qualtype: str) -> str:
+    """Get return type hint for generic TLObject"""
+    if qualtype.startswith("Vector"):
+        # Extract inner type from Vector<Type>
+        inner = qualtype.split("<")[1][:-1]
+        ns, name = inner.split(".") if "." in inner else ("", inner)
+        return f'"List[raw.base.{".".join([ns, name]).strip(".")}]"'
+    else:
+        ns, name = qualtype.split(".") if "." in qualtype else ("", qualtype)
+        return f'"raw.base.{".".join([ns, name]).strip(".")}"'
 
 
 # noinspection PyShadowingBuiltins, PyShadowingNames
@@ -123,7 +140,7 @@ def get_type_hint(type: str) -> str:
         is_core = True
 
         sub_type = type.split("<")[1][:-1]
-        type = f"List[{get_type_hint(sub_type)}]"
+        type = f"list[{get_type_hint(sub_type)}]"
 
     if is_core:
         return f"Optional[{type}] = None" if is_flag else type
@@ -199,6 +216,19 @@ def get_references(t: str, kind: str):
     return None, 0
 
 
+def indent_desc(desc: str, indent: str = "    ") -> str:
+    lines = desc.splitlines()
+
+    if len(lines) <= 1:
+        return desc
+
+    first, *rest = lines
+
+    return first + "\n" + "\n".join(
+        (indent + line if line.strip() else "") for line in rest
+    )
+
+
 # noinspection PyShadowingBuiltins
 def start(format: bool = False):
     shutil.rmtree(DESTINATION_PATH / "types", ignore_errors=True)
@@ -258,10 +288,13 @@ def start(format: bool = False):
 
             args = ARGS_RE.findall(line)
 
-            # Fix arg name being "self" (reserved python keyword)
+            # Fix arg name being reserved python keyword
             for i, item in enumerate(args):
-                if item[0] == "self":
-                    args[i] = ("is_self", item[1])
+                if item[0] in [
+                    "self",
+                    "from",
+                ]:
+                    args[i] = (f"is_{item[0]}", item[1])
 
             combinator = Combinator(
                 section=section,
@@ -332,7 +365,7 @@ def start(format: bool = False):
         else:
             type_docs = "Telegram API base type."
 
-        docstring = type_docs
+        docstring = indent_desc(type_docs)
 
         docstring += f"\n\n    Constructors:\n" \
                      f"        This base type has {constr_count} constructor{'s' if constr_count > 1 else ''} available.\n\n" \
@@ -397,7 +430,7 @@ def start(format: bool = False):
             arg_docs = combinator_docs.get(c.qualname, None)
 
             if arg_docs:
-                arg_docs = arg_docs["params"].get(arg_name, "N/A")
+                arg_docs = indent_desc(arg_docs["params"].get(arg_name, "N/A"), indent="            ")
             else:
                 arg_docs = "N/A"
 
@@ -418,13 +451,22 @@ def start(format: bool = False):
             else:
                 constructor_docs = "Telegram API type."
 
-            docstring += constructor_docs + "\n"
+            docstring += indent_desc(constructor_docs) + "\n"
             docstring += f"\n    Constructor of :obj:`~pyrogram.raw.base.{c.qualtype}`."
         else:
             function_docs = docs["method"].get(c.qualname, None)
 
             if function_docs:
-                docstring += function_docs["desc"] + "\n"
+                docstring += indent_desc(function_docs.get("desc", "").strip()) + "\n"
+
+                if function_docs.get("usable-by", "") != "":
+                    docstring += "\n    .. include:: /_includes/usable-by/" + function_docs["usable-by"] + ".rst\n        "
+
+                if function_docs.get("can_use_without_auth"):
+                    docstring += "\n\n    .. note::\n\n        " + "This method may be used by not yet logged in connections."
+
+                if function_docs.get("can_use_business_connection"):
+                    docstring += "\n\n    .. note::\n\n        " + "This method may be invoked over a `business connection » <https://corefork.telegram.org/api/bots/connected-business-bots>`__"
             else:
                 docstring += f"Telegram API function."
 
@@ -539,6 +581,12 @@ def start(format: bool = False):
         slots = ", ".join([f'"{i[0]}"' for i in sorted_args])
         return_arguments = ", ".join([f"{i[0]}={i[0]}" for i in sorted_args])
 
+        # Generate generic type hint for functions
+        if c.section == "functions":
+            generic_type = f"[{get_return_type_hint(c.qualtype)}]"
+        else:
+            generic_type = ""
+
         compiled_combinator = combinator_tmpl.format(
             notice=notice,
             warning=WARNING,
@@ -551,7 +599,8 @@ def start(format: bool = False):
             fields=fields,
             read_types=read_types,
             write_types=write_types,
-            return_arguments=return_arguments
+            return_arguments=return_arguments,
+            generic_type=generic_type
         )
 
         directory = "types" if c.section == "types" else c.section
